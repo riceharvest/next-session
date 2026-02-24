@@ -1,9 +1,9 @@
 // @ts-nocheck
-import { jest } from "@jest/globals";
+import { vi } from "vitest";
 import { createServer, IncomingMessage, request, ServerResponse } from "http";
 import { inject } from "light-my-request";
 import MemoryStore from "../src/memory-store";
-import session from "../src/session";
+import session from "../src/index";
 import { isNew, isTouched } from "../src/symbol";
 import { Session } from "../src/types";
 
@@ -13,6 +13,8 @@ const defaultCookie = {
   path: "/",
   sameSite: undefined,
   secure: false,
+  expires: undefined,
+  maxAge: undefined,
 };
 
 describe("session()", () => {
@@ -26,6 +28,7 @@ describe("session()", () => {
         expect(sess).toEqual({
           cookie: defaultCookie,
           [isNew]: true,
+          id: expect.any(String),
         });
         expect(req.session).toBe(sess);
         res.end();
@@ -35,7 +38,7 @@ describe("session()", () => {
   });
   test("return if req.session is defined", async () => {
     const store = {
-      get: jest.fn(),
+      get: vi.fn(),
     };
     await inject(
       async (req, res) => {
@@ -68,8 +71,8 @@ describe("session()", () => {
   });
   test("should set cookie header and save session", async () => {
     const store = {
-      get: jest.fn(),
-      set: jest.fn(() => Promise.resolve()),
+      get: vi.fn(),
+      set: vi.fn(() => Promise.resolve()),
     };
     let id: string;
     const res = await inject(
@@ -87,6 +90,7 @@ describe("session()", () => {
       foo: "bar",
       cookie: defaultCookie,
       [isNew]: true,
+      id,
     });
     await inject(
       async (req, res) => {
@@ -100,8 +104,8 @@ describe("session()", () => {
   });
   test("should set cookie header and save session (autoCommit = false)", async () => {
     const store = {
-      get: jest.fn(),
-      set: jest.fn(() => Promise.resolve()),
+      get: vi.fn(),
+      set: vi.fn(() => Promise.resolve()),
     };
     let id: string;
     const res = await inject(
@@ -120,6 +124,7 @@ describe("session()", () => {
       foo: "bar",
       cookie: defaultCookie,
       [isNew]: true,
+      id,
     });
     await inject(
       async (req, res) => {
@@ -133,8 +138,8 @@ describe("session()", () => {
   });
   test("set session expiry if maxAge is set", async () => {
     const store = {
-      get: jest.fn(),
-      set: jest.fn(() => Promise.resolve()),
+      get: vi.fn(),
+      set: vi.fn(() => Promise.resolve()),
     };
     let id: string;
     let expires: Date;
@@ -151,12 +156,13 @@ describe("session()", () => {
     );
     expect(res.headers).toHaveProperty("set-cookie");
     expect(res.headers["set-cookie"]).toBe(
-      `sid=${id}; Path=/; Expires=${expires.toUTCString()}; HttpOnly`
+      `sid=${id}; Max-Age=10; Path=/; Expires=${expires.toUTCString()}; HttpOnly`
     );
     expect(store.set).toHaveBeenCalledWith(id, {
       foo: "bar",
       cookie: { ...defaultCookie, expires, maxAge: 10 },
       [isNew]: true,
+      id,
     });
     await inject(
       async (req, res) => {
@@ -170,9 +176,9 @@ describe("session()", () => {
   });
   test("should destroy session and unset cookie", async () => {
     const store = new MemoryStore();
-    store.destroy = jest.fn();
-    store.set = jest.fn();
-    store.touch = jest.fn();
+    store.destroy = vi.fn();
+    store.set = vi.fn();
+    store.touch = vi.fn();
     const sid = "foo";
     await store.store.set(
       sid,
@@ -191,14 +197,14 @@ describe("session()", () => {
     expect(store.set).not.toHaveBeenCalled();
     expect(store.touch).not.toHaveBeenCalled();
     expect(res.headers["set-cookie"]).toBe(
-      `sid=${sid}; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly`
+      `sid=${sid}; Max-Age=-1; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly`
     );
   });
   test("should destroy session and unset cookie (autoCommit=false)", async () => {
     const store = new MemoryStore();
-    store.destroy = jest.fn();
-    store.set = jest.fn();
-    store.touch = jest.fn();
+    store.destroy = vi.fn();
+    store.set = vi.fn();
+    store.touch = vi.fn();
     const sid = "foo";
     await store.store.set(
       sid,
@@ -218,7 +224,7 @@ describe("session()", () => {
     expect(store.set).not.toHaveBeenCalled();
     expect(store.touch).not.toHaveBeenCalled();
     expect(res.headers["set-cookie"]).toBe(
-      `sid=${sid}; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly`
+      `sid=${sid}; Max-Age=-1; Path=/; Expires=Thu, 01 Jan 1970 00:00:00 GMT; HttpOnly`
     );
   });
   test("not to modify res.writeHead and res.end if autoCommit = false", async () => {
@@ -243,7 +249,7 @@ describe("session()", () => {
   });
   test("not touch (touchAfter = -1) by default", async () => {
     const store = new MemoryStore();
-    store.touch = jest.fn();
+    store.touch = vi.fn();
     const expires = new Date(Date.now() + 1000);
     await store.set("foo", {
       cookie: { ...defaultCookie, expires, maxAge: 5 },
@@ -261,7 +267,7 @@ describe("session()", () => {
   });
   test("touch if session life time > touchAfter", async () => {
     const store = new MemoryStore();
-    store.touch = jest.fn(() => Promise.resolve());
+    store.touch = vi.fn(() => Promise.resolve());
     const expires = new Date(Date.now() + 2000);
     await store.set("foo", {
       cookie: { ...defaultCookie, expires, maxAge: 5 },
@@ -278,16 +284,17 @@ describe("session()", () => {
     );
     expect(newExpires.getTime()).toBeGreaterThan(expires.getTime());
     expect(res.headers["set-cookie"]).toEqual(
-      `sid=foo; Path=/; Expires=${newExpires.toUTCString()}; HttpOnly`
+      `sid=foo; Max-Age=5; Path=/; Expires=${newExpires.toUTCString()}; HttpOnly`
     );
     expect(store.touch).toHaveBeenCalledWith("foo", {
       cookie: { ...defaultCookie, expires: newExpires, maxAge: 5 },
       [isTouched]: true,
+      id: "foo",
     });
   });
   test("not touch session life time < touchAfter", async () => {
     const store = new MemoryStore();
-    store.touch = jest.fn(() => Promise.resolve());
+    store.touch = vi.fn(() => Promise.resolve());
     const expires = new Date(Date.now() + 2000);
     await store.set("foo", {
       cookie: { ...defaultCookie, expires, maxAge: 5 },
@@ -306,7 +313,7 @@ describe("session()", () => {
     expect(res.headers).not.toHaveProperty("set-cookie");
     expect(store.touch).not.toHaveBeenCalled();
   });
-  test("support calling res.end() multiple times", (done) => {
+  test("support calling res.end() multiple times", async () => {
     // This must be tested with a real server to verify headers sent error
     // https://github.com/hoangvvo/next-session/pull/31
     const server = createServer(async (req, res) => {
@@ -315,30 +322,29 @@ describe("session()", () => {
       res.end("Hello, world!");
       res.end();
     });
-    server.listen(
-      async (req, res) => {
-        await session()(req, res);
-        req.session.foo = "bar";
-        res.end("Hello, world!");
-        res.end();
-      },
-      function callback() {
-        const address = this.address();
+    
+    return new Promise((resolve, reject) => {
+      server.listen(0, async () => {
+        const address = server.address();
         request(`http://127.0.0.1:${address.port}/`, (res) => {
           let data = "";
           res.on("data", (d) => {
             if (d) data += d;
           });
           res.on("end", () => {
-            expect(data).toEqual("Hello, world!");
-            server.close(done);
+            try {
+              expect(data).toEqual("Hello, world!");
+              server.close(resolve);
+            } catch (err) {
+              server.close(() => reject(err));
+            }
           });
-          res.on("error", done);
+          res.on("error", (err) => server.close(() => reject(err)));
         })
-          .on("error", done)
+          .on("error", (err) => server.close(() => reject(err)))
           .end();
-      }
-    );
+      });
+    });
   });
   test("allow encode and decode sid", async () => {
     const decode = (key: string) => {
@@ -395,7 +401,7 @@ describe("session()", () => {
   });
   test("should convert to date if store returns session.cookies.expires as string", async () => {
     const store = {
-      get: async (id: string) => {
+      get: async (_id: string) => {
         //  force sess.cookie.expires to be string
         return JSON.parse(
           JSON.stringify({
@@ -403,8 +409,8 @@ describe("session()", () => {
           })
         );
       },
-      set: async (sid: string, sess: SessionData) => undefined,
-      destroy: async (id: string) => undefined,
+      set: async (_sid: string, _sess: SessionData) => undefined,
+      destroy: async (_id: string) => undefined,
     };
     await inject(
       async (req, res) => {

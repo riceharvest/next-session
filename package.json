@@ -1,7 +1,7 @@
 {
   "type": "module",
   "name": "@opensourceframework/next-session",
-  "version": "4.0.4",
+  "version": "4.0.5",
   "description": "Simple promise-based session for Next.js",
   "keywords": [
     "nextjs",
@@ -28,7 +28,7 @@
   "scripts": {
     "build": "tsup",
     "dev": "tsup --watch",
-    "lint": "eslint src --ext ts --ignore-path .gitignore",
+    "lint": "eslint . --ignore-pattern examples --ignore-pattern test",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --passWithNoTests",
     "test:watch": "vitest",
@@ -54,7 +54,7 @@
     "light-my-request": "^6.0.0",
     "tsup": "^8.0.0",
     "typescript": "^5.0.0",
-    "vitest": "^2.0.0"
+    "vitest": "^4.0.18"
   },
   "dependencies": {
     "cookie": "^0.4.1",
